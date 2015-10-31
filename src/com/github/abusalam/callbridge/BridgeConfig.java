@@ -12,6 +12,7 @@ import org.apache.http.conn.util.InetAddressUtils;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ComponentName;
 //import android.net.DhcpInfo;
 import android.net.Uri;
 //import android.net.wifi.WifiManager;
@@ -100,32 +101,51 @@ public class BridgeConfig extends Activity {
      */
     public class CallListener extends NanoHTTPD {
         public CallListener() {
-            super(8080);
+            super(8020);
             ServerRunner.run(CallListener.class);
         }
 
         @Override public Response serve(IHTTPSession session) {
             Method method = session.getMethod();
             String uri = session.getUri();
-            System.out.println(method + " '" + uri + "' ");
+            String query = session.getQueryParameterString();
+            Log.i("WebIntent", method + " " + uri + (query != null ? "?" + query : ""));
 
-            String msg = "<html><body>";
-            Map<String, String> parms = session.getParms();
-            if (parms.get("cellNo") == null)
-                msg +=
-                        "<form action='?' method='get'>\n" +
-                                "  <p>Mobile No: <input type='text' name='cellNo'></p>\n" +
-                                "</form>\n";
-            else
-            {
-                msg += "<p>Calling: " + parms.get("cellNo") + "</p>";
+            String msg = "unknown path";
+            if (uri.equals("/")) {
+                msg =
+                        "<html><body><h1>Android Web Intent Bridge</h1><form action='/intent' method='get'>\n" +
+                                "  <li>Call Number: <input type='text' name='callNo'></li>\n" +
+                                "  <li>Open Web Page: <input type='text' name='openUrl'></li>\n" +
+                                "  <li>Launch Activity: <input type='text' name='launchActivity'></li>\n" +
+                                "<input type='submit' value='Start!'></form></body></html>\n";
             }
-            msg += "</body></html>\n";
-            Intent callIntent = new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+parms.get("cellNo")));
-            callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(callIntent);
+
+            if (uri.equals("/intent")) {
+                msg = "no intent";
+                Intent intent = null;
+                Map<String, String> parms = session.getParms();
+                String callNo = parms.get("callNo");
+                String openUrl = parms.get("openUrl");
+                String launchActivity = parms.get("launchActivity");
+                if (callNo != null && callNo.length() > 0) {
+                    intent = new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+callNo));
+                }
+                if (openUrl != null && openUrl.length() > 0) {
+                    intent = new Intent(Intent.ACTION_VIEW,Uri.parse(""+openUrl));
+                }
+                if (launchActivity != null && launchActivity.length() > 0) {
+                    intent = new Intent(Intent.ACTION_MAIN);
+                    intent.addCategory(Intent.CATEGORY_LAUNCHER);
+                    intent.setComponent(ComponentName.unflattenFromString(launchActivity));
+                }
+                if(intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    msg = "started: " + intent.toString();
+                }
+            }
             return new NanoHTTPD.Response(msg);
         }
     }
-
 }

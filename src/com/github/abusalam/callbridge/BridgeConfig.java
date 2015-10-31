@@ -19,6 +19,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.PowerManager;
+import android.os.PowerManager.WakeLock;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -111,23 +113,32 @@ public class BridgeConfig extends Activity {
             String query = session.getQueryParameterString();
             Log.i("WebIntent", method + " " + uri + (query != null ? "?" + query : ""));
 
-            String msg = "unknown path";
+            String msg = "error: unknown path";
             if (uri.equals("/")) {
                 msg =
                         "<html><body><h1>Android Web Intent Bridge</h1><form action='/intent' method='get'>\n" +
                                 "  <li>Call Number: <input type='text' name='callNo'></li>\n" +
                                 "  <li>Open Web Page: <input type='text' name='openUrl'></li>\n" +
                                 "  <li>Launch Activity: <input type='text' name='launchActivity'></li>\n" +
+                                "  <input type='checkbox' name='wakeupDevice'>Wakeup Device<br>\n" +
                                 "<input type='submit' value='Start!'></form></body></html>\n";
             }
 
             if (uri.equals("/intent")) {
-                msg = "no intent";
+                msg = "error: no intent";
                 Intent intent = null;
+                WakeLock wakeLock = null;
                 Map<String, String> parms = session.getParms();
                 String callNo = parms.get("callNo");
                 String openUrl = parms.get("openUrl");
                 String launchActivity = parms.get("launchActivity");
+                String wakeupDevice = parms.get("wakeupDevice");
+                if (wakeupDevice != null && wakeupDevice.equals("on")) {
+                    final String WAKELOCK_TAG = "WebIntentBridgeWakeLock";
+                    PowerManager powerManager = (PowerManager)getSystemService(POWER_SERVICE);
+                    wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, WAKELOCK_TAG);
+                    wakeLock.acquire();
+                }
                 if (callNo != null && callNo.length() > 0) {
                     intent = new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+callNo));
                 }
@@ -141,8 +152,15 @@ public class BridgeConfig extends Activity {
                 }
                 if(intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
                     msg = "started: " + intent.toString();
+                    try {
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        msg = "exception: " + e.getMessage();
+                    }
+                }
+                if (wakeLock!=null) {
+                    wakeLock.release();
                 }
             }
             return new NanoHTTPD.Response(msg);
